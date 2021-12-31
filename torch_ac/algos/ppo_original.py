@@ -35,6 +35,7 @@ class PPOAlgoOriginal(BaseAlgo):
             log_entropies = []
             log_values = []
             log_costs = []
+            log_inquiries = []
             log_policy_losses = []
             log_value_losses = []
             log_grad_norms = []
@@ -45,6 +46,7 @@ class PPOAlgoOriginal(BaseAlgo):
                 batch_entropy = 0
                 batch_value = 0
                 batch_costs = 0
+                batch_inquiries = 0 
                 batch_policy_loss = 0
                 batch_value_loss = 0
                 batch_loss = 0
@@ -62,9 +64,9 @@ class PPOAlgoOriginal(BaseAlgo):
                     # Compute loss
 
                     if self.acmodel.recurrent:
-                        dist, value, cost, memory = self.acmodel(sb.obs, memory * sb.mask)
+                        dist, value, cost, ask, memory = self.acmodel(sb.obs, memory * sb.mask)
                     else:
-                        dist, value, cost = self.acmodel(sb.obs)
+                        dist, value, cost, ask = self.acmodel(sb.obs)
 
                     entropy = dist.entropy().mean()
 
@@ -85,6 +87,7 @@ class PPOAlgoOriginal(BaseAlgo):
                     batch_entropy += entropy.item()
                     batch_value += value.mean().item()
                     batch_costs += cost.mean().item()
+                    batch_inquiries += ask.mean().item()
                     batch_policy_loss += policy_loss.item()
                     batch_value_loss += value_loss.item()
                     batch_loss += loss
@@ -99,6 +102,7 @@ class PPOAlgoOriginal(BaseAlgo):
                 batch_entropy /= self.recurrence
                 batch_value /= self.recurrence
                 batch_costs /= self.recurrence
+                batch_inquiries /= self.recurrence
                 batch_policy_loss /= self.recurrence
                 batch_value_loss /= self.recurrence
                 batch_loss /= self.recurrence
@@ -116,6 +120,7 @@ class PPOAlgoOriginal(BaseAlgo):
                 log_entropies.append(batch_entropy)
                 log_values.append(batch_value)
                 log_costs.append(batch_costs)
+                log_inquiries.append(batch_inquiries)
                 log_policy_losses.append(batch_policy_loss)
                 log_value_losses.append(batch_value_loss)
                 log_grad_norms.append(grad_norm)
@@ -126,6 +131,7 @@ class PPOAlgoOriginal(BaseAlgo):
             "entropy": numpy.mean(log_entropies),
             "value": numpy.mean(log_values),
             "cost": numpy.mean(log_costs),
+            "inquiries": numpy.mean(log_inquiries),
             "policy_loss": numpy.mean(log_policy_losses),
             "value_loss": numpy.mean(log_value_losses),
             "grad_norm": numpy.mean(log_grad_norms)
