@@ -89,8 +89,10 @@ class BaseAlgo(ABC):
         self.values = torch.zeros(*shape, device=self.device)
         self.rewards = torch.zeros(*shape, device=self.device)
         self.rewards2 = torch.zeros(*shape, device=self.device)
+        self.Rewards = torch.zeros(*shape, device=self.device)
         self.advantages = torch.zeros(*shape, device=self.device)
         self.advantages2 = torch.zeros(*shape, device=self.device)
+        self.advantages3 = torch.zeros(*shape, device=self.device)
         self.log_probs = torch.zeros(*shape, device=self.device)
 
         # Initialize log values
@@ -99,6 +101,8 @@ class BaseAlgo(ABC):
         self.log_episode_reshaped_return = torch.zeros(self.num_procs, device=self.device)
         self.log_episode_return2 = torch.zeros(self.num_procs, device=self.device)
         self.log_episode_reshaped_return2 = torch.zeros(self.num_procs, device=self.device)
+        self.log_episode_return3 = torch.zeros(self.num_procs, device=self.device)
+        self.log_episode_reshaped_return3 = torch.zeros(self.num_procs, device=self.device)
         self.log_episode_num_frames = torch.zeros(self.num_procs, device=self.device)
 
         self.log_done_counter = 0
@@ -106,6 +110,8 @@ class BaseAlgo(ABC):
         self.log_reshaped_return = [0] * self.num_procs
         self.log_return2 = [0] * self.num_procs
         self.log_reshaped_return2 = [0] * self.num_procs
+        self.log_return3 = [0] * self.num_procs
+        self.log_reshaped_return3 = [0] * self.num_procs
         self.log_num_frames = [0] * self.num_procs
 
     def collect_experiences(self):
@@ -165,9 +171,15 @@ class BaseAlgo(ABC):
                     self.reshape_reward(obs_, action_, reward_, done_)
                     for obs_, action_, reward_, done_ in zip(obs, action, reward2, done)
                 ], device=self.device)
+                self.Rewards[i] = torch.tensor([
+                    self.reshape_reward(obs_, action_, reward_, done_)
+                    for obs_, action_, reward_, done_ in zip(obs, action, Reward, done)
+                ], device=self.device)
+
             else:
                 self.rewards[i] = torch.tensor(reward, device=self.device)
                 self.rewards2[i] = torch.tensor(reward2, device=self.device)
+                self.Rewards[i] = torch.tensor(Reward, device=self.device)
             self.log_probs[i] = dist.log_prob(action)
 
             # Update log values
@@ -176,6 +188,8 @@ class BaseAlgo(ABC):
             self.log_episode_reshaped_return += self.rewards[i]
             self.log_episode_return2 += torch.tensor(reward2, device=self.device, dtype=torch.float)
             self.log_episode_reshaped_return2 += self.rewards2[i]
+            self.log_episode_return3 += torch.tensor(Reward, device=self.device, dtype=torch.float)
+            self.log_episode_reshaped_return3 += self.Rewards[i]
             self.log_episode_num_frames += torch.ones(self.num_procs, device=self.device)
 
             for i, done_ in enumerate(done):
@@ -185,12 +199,16 @@ class BaseAlgo(ABC):
                     self.log_reshaped_return.append(self.log_episode_reshaped_return[i].item())
                     self.log_return2.append(self.log_episode_return2[i].item())
                     self.log_reshaped_return2.append(self.log_episode_reshaped_return2[i].item())
+                    self.log_return3.append(self.log_episode_return3[i].item())
+                    self.log_reshaped_return3.append(self.log_episode_reshaped_return3[i].item())
                     self.log_num_frames.append(self.log_episode_num_frames[i].item())
 
             self.log_episode_return *= self.mask
             self.log_episode_reshaped_return *= self.mask
             self.log_episode_return2 *= self.mask
             self.log_episode_reshaped_return2 *= self.mask
+            self.log_episode_return3 *= self.mask
+            self.log_episode_reshaped_return3 *= self.mask
             self.log_episode_num_frames *= self.mask
 
         # Add advantage and return to experiences
@@ -207,12 +225,16 @@ class BaseAlgo(ABC):
             next_value = self.values[i+1] if i < self.num_frames_per_proc - 1 else next_value
             next_advantage = self.advantages[i+1] if i < self.num_frames_per_proc - 1 else 0
             next_advantage2 = self.advantages2[i+1] if i < self.num_frames_per_proc - 1 else 0
+            next_advantage3 = self.advantages3[i+1] if i < self.num_frames_per_proc - 1 else 0
 
             delta = self.rewards[i] + self.discount * next_value * next_mask - self.values[i]
             self.advantages[i] = delta + self.discount * self.gae_lambda * next_advantage * next_mask
 
             delta2 = self.rewards2[i] + self.discount * next_value * next_mask - self.values[i]
             self.advantages2[i] = delta2 + self.discount * self.gae_lambda * next_advantage2 * next_mask
+
+            delta3 = self.Rewards[i] + self.discount * next_value * next_mask - self.values[i]
+            self.advantages3[i] = delta3 + self.discount * self.gae_lambda * next_advantage3 * next_mask
 
         # Define experiences:
         #   the whole experience is the concatenation of the experience
@@ -236,10 +258,13 @@ class BaseAlgo(ABC):
         exps.value = self.values.transpose(0, 1).reshape(-1)
         exps.reward = self.rewards.transpose(0, 1).reshape(-1)
         exps.reward2 = self.rewards2.transpose(0, 1).reshape(-1)
+        exps.Reward = self.Rewards.transpose(0, 1).reshape(-1)
         exps.advantage = self.advantages.transpose(0, 1).reshape(-1)
         exps.advantage2 = self.advantages2.transpose(0, 1).reshape(-1)
+        exps.advantage3 = self.advantages3.transpose(0, 1).reshape(-1)
         exps.returnn = exps.value + exps.advantage
         exps.returnn2 = exps.value + exps.advantage2
+        exps.returnn3 = exps.value + exps.advantage3 
         exps.log_prob = self.log_probs.transpose(0, 1).reshape(-1)
 
         # Preprocess experiences
@@ -251,8 +276,15 @@ class BaseAlgo(ABC):
         keep = max(self.log_done_counter, self.num_procs)
 
         logs = {
-            "return_per_episode": self.log_return[-keep:],
-            "reshaped_return_per_episode": self.log_reshaped_return[-keep:],
+            "return_per_episode_r-v": self.log_return[-keep:],
+            "reshaped_return_per_episode_r-v": self.log_reshaped_return[-keep:],
+
+            "return_per_episode_r+v": self.log_return2[-keep:],
+            "reshaped_return_per_episode_r+v": self.log_reshaped_return2[-keep:],
+
+            "return_per_episode_r": self.log_return3[-keep:],
+            "reshaped_return_per_episode_r": self.log_reshaped_return3[-keep:],
+
             "num_frames_per_episode": self.log_num_frames[-keep:],
             "num_frames": self.num_frames
         }
@@ -262,6 +294,8 @@ class BaseAlgo(ABC):
         self.log_reshaped_return = self.log_reshaped_return[-self.num_procs:]
         self.log_return2 = self.log_return2[-self.num_procs:]
         self.log_reshaped_return2 = self.log_reshaped_return2[-self.num_procs:]
+        self.log_return3 = self.log_return3[-self.num_procs:]
+        self.log_reshaped_return3 = self.log_reshaped_return3[-self.num_procs:]
         self.log_num_frames = self.log_num_frames[-self.num_procs:]
 
         return exps, logs
