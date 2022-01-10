@@ -110,7 +110,7 @@ class PPOAlgo(BaseAlgo):
                     batch_entropy += entropy.item()
                     batch_value += value.mean().item()
                     batch_costs += cost.mean().item()
-                    batch_inquiries += ask.sum().item()
+                    batch_inquiries += ask.mean().item()
                     batch_policy_loss += policy_loss.item()
                     batch_value_loss += value_loss.item()
                     batch_policy_loss2 += policy_loss2.item()
